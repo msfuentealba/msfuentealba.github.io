@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Sample Simulation</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/2.2.1/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jstat/1.9.6/jstat.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px; 
+            background-color: #ffffff; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .main-wrapper {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            max-width: 1000px;
+            width: 100%;
+        }
+        .panel { 
+            background: #f4f4f4; 
+            border: 1px solid #1a237e; 
+            border-radius: 4px; 
+            padding: 20px; 
+            width: 320px;
+            box-sizing: border-box;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 10px;
+            margin-bottom: 15px;
+            color: #000;
+        }
+        .row { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            margin-bottom: 12px; 
+        }
+        .row label { 
+            color: #000;
+            font-size: 14px;
+        }
+        .row input { 
+            width: 80px; 
+            padding: 6px; 
+            border: 1.5px solid #1a237e; 
+            border-radius: 4px; 
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .divider {
+            border-top: 1px solid #ccc;
+            margin: 20px 0;
+        }
+        .btn-container {
+            display: flex;
+            justify-content: flex-end;
+        }
+        button { 
+            padding: 8px 24px; 
+            background-color: #0056b3; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 14px;
+            font-weight: bold;
+        }
+        button:hover { 
+            background-color: #004494; 
+        }
+        .results-container {
+            flex: 1;
+            min-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .stats-box {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .chart-container {
+            width: 100%;
+            height: 250px;
+        }
+        .scatter-container {
+            width: 100%;
+            height: 350px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-wrapper">
+    <div class="panel">
+        <div class="section-title">Sample 1</div>
+        <div class="row">
+            <label>Mean:</label>
+            <input type="number" id="mean1" value="100" step="0.1">
+        </div>
+        <div class="row">
+            <label>Standard deviation:</label>
+            <input type="number" id="sd1" value="15" step="0.1">
+        </div>
+        <div class="row">
+            <label>Sample size:</label>
+            <input type="number" id="n1" value="100" step="1">
+        </div>
+        
+        <div class="section-title" style="margin-top: 25px;">Sample 2</div>
+        <div class="row">
+            <label>Mean:</label>
+            <input type="number" id="mean2" value="105" step="0.1">
+        </div>
+        <div class="row">
+            <label>Standard deviation:</label>
+            <input type="number" id="sd2" value="15" step="0.1">
+        </div>
+        <div class="row">
+            <label>Sample size:</label>
+            <input type="number" id="n2" value="100" step="1">
+        </div>
+        
+        <div class="divider"></div>
+        
+        <div class="btn-container">
+            <button onclick="runSimulation()">OK</button>
+        </div>
+    </div>
+
+    <div class="results-container">
+        <div class="stats-box" id="resultsBox">
+            Run the simulation to see the mean difference and p-value.
+        </div>
+        <div class="chart-container">
+            <canvas id="nullChart"></canvas>
+        </div>
+        <div class="scatter-container">
+            <canvas id="scatterChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    let scatterChartInstance = null;
+    let nullChartInstance = null;
+
+    function generateRandomNormal(mean, sd) {
+        let u = 1 - Math.random(); 
+        let v = Math.random();
+        let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        return z * sd + mean;
+    }
+
+    function normalPDF(x, mean, std) {
+        return (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mean) / std, 2));
+    }
+
+    function calculateStats(arr) {
+        let sum = 0;
+        for (let i = 0; i < arr.length; i++) {
+            sum += arr[i];
+        }
+        let mean = sum / arr.length;
+        
+        let sqDiffSum = 0;
+        for (let i = 0; i < arr.length; i++) {
+            sqDiffSum += Math.pow(arr[i] - mean, 2);
+        }
+        let variance = sqDiffSum / (arr.length - 1);
+        
+        return { mean, variance, n: arr.length };
+    }
+
+    function runSimulation() {
+        const m1 = parseFloat(document.getElementById('mean1').value);
+        const sd1 = parseFloat(document.getElementById('sd1').value);
+        const n1 = parseInt(document.getElementById('n1').value);
+
+        const m2 = parseFloat(document.getElementById('mean2').value);
+        const sd2 = parseFloat(document.getElementById('sd2').value);
+        const n2 = parseInt(document.getElementById('n2').value);
+
+        if (isNaN(m1) || isNaN(sd1) || isNaN(n1) || isNaN(m2) || isNaN(sd2) || isNaN(n2)) {
+            alert("Please enter valid numerical values.");
+            return;
+        }
+
+        let sample1 = [];
+        let sample2 = [];
+        for (let i = 0; i < n1; i++) sample1.push(generateRandomNormal(m1, sd1));
+        for (let i = 0; i < n2; i++) sample2.push(generateRandomNormal(m2, sd2));
+
+        let stats1 = calculateStats(sample1);
+        let stats2 = calculateStats(sample2);
+
+        let meanDifference = stats2.mean - stats1.mean;
+
+        let v1 = stats1.variance / stats1.n;
+        let v2 = stats2.variance / stats2.n;
+        
+        let tStatistic = (stats1.mean - stats2.mean) / Math.sqrt(v1 + v2);
+        let df = Math.pow(v1 + v2, 2) / (Math.pow(v1, 2) / (stats1.n - 1) + Math.pow(v2, 2) / (stats2.n - 1));
+        let pValue = 2 * (1 - jStat.studentt.cdf(Math.abs(tStatistic), df));
+
+        document.getElementById('resultsBox').innerHTML = 
+            `<strong>Sample 1 Simulated Mean:</strong> ${stats1.mean.toFixed(2)}<br>` +
+            `<strong>Sample 2 Simulated Mean:</strong> ${stats2.mean.toFixed(2)}<br>` +
+            `<strong>Mean Difference:</strong> ${meanDifference.toFixed(2)}<br><br>` +
+            `<strong>T-Statistic:</strong> ${Math.abs(tStatistic).toFixed(3)}<br>` +
+            `<strong>Degrees of Freedom:</strong> ${df.toFixed(2)}<br>` +
+            `<strong>P-Value:</strong> ${pValue.toFixed(5)}`;
+
+        drawNullChart(sd1, n1, n2, meanDifference);
+        drawScatterChart(sample1, sample2, stats1.mean, stats2.mean);
+    }
+
+    function drawNullChart(sd1, n1, n2, actualDiff) {
+        const ctx = document.getElementById('nullChart').getContext('2d');
+        
+        // Calculate the standard error of the difference assuming both come from Sample 1's parameters
+        const nullSE = Math.sqrt(Math.pow(sd1, 2) / n1 + Math.pow(sd1, 2) / n2);
+        
+        const labels = [];
+        const data = [];
+        
+        // Plot from -4 SE to +4 SE to capture the full bell curve
+        const range = 4 * nullSE;
+        const step = range / 50;
+
+        for (let i = -range; i <= range; i += step) {
+            labels.push(i.toFixed(2));
+            data.push({ x: i, y: normalPDF(i, 0, nullSE) });
+        }
+
+        if (nullChartInstance) {
+            nullChartInstance.destroy();
+        }
+
+        nullChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Distribution of Differences (Null Hypothesis)',
+                    data: data,
+                    borderColor: '#6c757d',
+                    borderWidth: 2,
+                    fill: true,
+                    backgroundColor: 'rgba(108, 117, 125, 0.2)',
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    annotation: {
+                        annotations: {
+                            line1: {
+                                type: 'line',
+                                xMin: actualDiff,
+                                xMax: actualDiff,
+                                borderColor: 'red',
+                                borderWidth: 3,
+                                label: {
+                                    content: `Observed Diff: ${actualDiff.toFixed(2)}`,
+                                    enabled: true,
+                                    position: 'top',
+                                    backgroundColor: 'red'
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: { 
+                        display: false 
+                    },
+                    x: {
+                        type: 'linear',
+                        title: {
+                            display: true,
+                            text: 'Difference in Means'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function drawScatterChart(sample1, sample2, mean1, mean2) {
+        const ctx = document.getElementById('scatterChart').getContext('2d');
+        
+        const data1 = sample1.map(val => ({
+            x: val,
+            y: 1 + (Math.random() - 0.5) * 0.4 
+        }));
+
+        const data2 = sample2.map(val => ({
+            x: val,
+            y: 2 + (Math.random() - 0.5) * 0.4
+        }));
+
+        if (scatterChartInstance) {
+            scatterChartInstance.destroy();
+        }
+
+        scatterChartInstance = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    {
+                        label: 'Sample 1',
+                        data: data1,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    },
+                    {
+                        label: 'Sample 2',
+                        data: data2,
+                        backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        min: 0,
+                        max: 3,
+                        ticks: {
+                            callback: function(value) {
+                                if (value === 1) return 'Sample 1';
+                                if (value === 2) return 'Sample 2';
+                                return '';
+                            },
+                            font: { size: 14, weight: 'bold' }
+                        },
+                        grid: { display: false }
+                    },
+                    x: {
+                        title: { display: true, text: 'Value', font: { size: 14 } }
+                    }
+                },
+                plugins: {
+                    annotation: {
+                        annotations: {
+                            line1: {
+                                type: 'line',
+                                xMin: mean1,
+                                xMax: mean1,
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 3,
+                                borderDash: [5, 5],
+                                label: {
+                                    content: `M1: ${mean1.toFixed(2)}`,
+                                    enabled: true,
+                                    position: 'start',
+                                    backgroundColor: 'rgba(54, 162, 235, 0.9)'
+                                }
+                            },
+                            line2: {
+                                type: 'line',
+                                xMin: mean2,
+                                xMax: mean2,
+                                borderColor: 'rgba(255, 99, 132, 1)',
+                                borderWidth: 3,
+                                borderDash: [5, 5],
+                                label: {
+                                    content: `M2: ${mean2.toFixed(2)}`,
+                                    enabled: true,
+                                    position: 'end',
+                                    backgroundColor: 'rgba(255, 99, 132, 0.9)'
+                                }
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `Value: ${context.raw.x.toFixed(2)}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Differential Expression Tutorial: Young vs Old (GTEx Whole Blood)</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#5b6470; --rule:#e3e6ea;
+    --bg:#ffffff; --code-bg:#f6f8fa; --accent:#8a1c1c; --link:#0b5cad;
+    --kw:#a626a4; --str:#50a14f; --com:#a0a1a7; --num:#986801; --fun:#4078f2;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.65; font-size:17px;
+  }
+  .wrap{max-width:820px; margin:0 auto; padding:56px 24px 96px}
+  header{border-bottom:2px solid var(--ink); padding-bottom:22px; margin-bottom:36px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .sub{color:var(--muted); font-size:16px; margin:0}
+  h2{font-size:22px; margin:44px 0 6px; letter-spacing:-.01em}
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:.5ch}
+  h3{font-size:17px; margin:28px 0 4px; color:#333}
+  p{margin:12px 0}
+  .lead{font-size:18px; color:#333}
+  code{font-family:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.88em; background:var(--code-bg); padding:.12em .38em; border-radius:4px}
+  pre{background:var(--code-bg); border:1px solid var(--rule); border-radius:8px;
+    padding:16px 18px; overflow-x:auto; margin:16px 0; line-height:1.55}
+  pre code{background:none; padding:0; font-size:14px; display:block; white-space:pre}
+  .note{border-left:3px solid var(--accent); background:#fbf4f4;
+    padding:12px 16px; margin:20px 0; border-radius:0 6px 6px 0; font-size:15.5px}
+  .note b{color:var(--accent)}
+  .tip{border-left:3px solid var(--link); background:#f3f8fd;
+    padding:12px 16px; margin:20px 0; border-radius:0 6px 6px 0; font-size:15.5px}
+  a{color:var(--link); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .toc{background:#fafbfc; border:1px solid var(--rule); border-radius:8px;
+    padding:16px 20px 16px 20px; margin:24px 0 8px; font-size:15.5px}
+  .toc p{margin:0 0 8px; font-weight:600; font-size:13px; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--muted)}
+  .toc ol{margin:0; padding-left:22px}
+  .toc li{margin:3px 0}
+  hr{border:none; border-top:1px solid var(--rule); margin:40px 0}
+  footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--rule);
+    color:var(--muted); font-size:14px}
+  /* token colors */
+  .c{color:var(--com); font-style:italic}
+  .s{color:var(--str)}
+  .k{color:var(--kw)}
+  .f{color:var(--fun)}
+  .o{color:#383a42}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Differential Expression Analysis</h1>
+  <p class="sub">Finding genes that change with age &mdash; young vs old in GTEx whole blood, using a two-sample t-test in R.</p>
+</header>
+
+<p class="lead">This tutorial walks through the simplest honest way to find differentially expressed genes: run a t-test on every gene, correct for multiple testing, and look at the strongest hits. The point is to make the core idea transparent before reaching for specialized tools.</p>
+
+<div class="toc">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#idea">The core idea</a></li>
+    <li><a href="#inputs">Inputs</a></li>
+    <li><a href="#packages">Packages</a></li>
+    <li><a href="#load">Load and align the data</a></li>
+    <li><a href="#transform">Log-transform</a></li>
+    <li><a href="#ttest">A t-test for every gene</a></li>
+    <li><a href="#multiple">Multiple-testing correction</a></li>
+    <li><a href="#plot">Plot the top 10 genes</a></li>
+    <li><a href="#volcano">Volcano plot with labeled top 10</a></li>
+    <li><a href="#enrich">GO enrichment (clusterProfiler)</a></li>
+    <li><a href="#full">The full script</a></li>
+  </ol>
+</div>
+
+<h2 id="idea"><span class="n">1.</span>The core idea</h2>
+<p>Every differential-expression method, no matter how sophisticated, is answering one question for each gene: <em>is the difference between the two groups bigger than what noise alone would produce?</em> A two-sample t-test asks exactly that, in a form you already know from introductory statistics. We run it once per gene, get a p-value per gene, then correct for the fact that we ran the test thousands of times.</p>
+<div class="note">
+  <b>What a t-test does and doesn't do.</b> A t-test compares the two age groups directly, using only the age label. It cannot hold other variables constant. If sex were imbalanced across the age groups it could leak into the result &mdash; which is why this dataset is restricted to a single sex. With sex fixed by design, the t-test is a clean comparison.
+</div>
+
+<h2 id="inputs"><span class="n">2.</span>Inputs</h2>
+<p>Two tab-separated files in the same folder as the script:</p>
+<p><code>expression_matrix.tsv</code> &mdash; the first column is the gene symbol; every other column is a sample holding its expression value (TPM). <code>metadata.tsv</code> &mdash; one row per sample, with at least a <code>sample_id</code> and an <code>age_group</code> column whose values are <code>young</code> or <code>old</code>.</p>
+
+<h2 id="packages"><span class="n">3.</span>Packages</h2>
+<p>The analysis itself is base R. Only the plot needs <code>ggplot2</code>, which we install if it isn't already present.</p>
+<pre><code><span class="c"># ---- packages ----</span>
+<span class="k">if</span> (!<span class="f">requireNamespace</span>(<span class="s">"ggplot2"</span>, quietly = <span class="k">TRUE</span>)) <span class="f">install.packages</span>(<span class="s">"ggplot2"</span>)
+<span class="f">library</span>(ggplot2)</code></pre>
+
+<h2 id="load"><span class="n">4.</span>Load and align the data</h2>
+<p>We read both files, move the gene symbols into the matrix row names, and &mdash; the step that matters most &mdash; reorder the matrix columns to match the metadata row order. If a sample's expression column and its metadata row don't line up, every group label is wrong and the whole analysis is silently meaningless.</p>
+<pre><code><span class="c"># ---- load data ----</span>
+expr <span class="o">&lt;-</span> <span class="f">read.delim</span>(<span class="s">"expression_matrix.tsv"</span>, check.names = <span class="k">FALSE</span>)
+meta <span class="o">&lt;-</span> <span class="f">read.delim</span>(<span class="s">"metadata.tsv"</span>, check.names = <span class="k">FALSE</span>)
+
+<span class="f">rownames</span>(expr) <span class="o">&lt;-</span> expr<span class="o">$</span>gene_name
+expr<span class="o">$</span>gene_name <span class="o">&lt;-</span> <span class="k">NULL</span>
+expr <span class="o">&lt;-</span> <span class="f">as.matrix</span>(expr[, meta<span class="o">$</span>sample_id])
+
+meta<span class="o">$</span>age_group <span class="o">&lt;-</span> <span class="f">factor</span>(meta<span class="o">$</span>age_group, levels = <span class="f">c</span>(<span class="s">"young"</span>, <span class="s">"old"</span>))</code></pre>
+<p>Setting <code>young</code> as the first factor level makes it the baseline, so a positive fold change later reads as &ldquo;higher in old.&rdquo;</p>
+
+<h2 id="transform"><span class="n">5.</span>Log-transform</h2>
+<p>Raw expression values are heavily right-skewed: a few genes are enormous and most are small. A t-test assumes roughly symmetric data, so we compress the scale with a base-2 log. The <code>+ 1</code> avoids taking the log of zero.</p>
+<pre><code>logtpm <span class="o">&lt;-</span> <span class="f">log2</span>(expr + <span class="num">1</span>)
+
+is_old   <span class="o">&lt;-</span> meta<span class="o">$</span>age_group <span class="o">==</span> <span class="s">"old"</span>
+is_young <span class="o">&lt;-</span> meta<span class="o">$</span>age_group <span class="o">==</span> <span class="s">"young"</span></code></pre>
+<p>The two boolean masks pick out the columns of each group; we reuse them for every gene.</p>
+
+<h2 id="ttest"><span class="n">6.</span>A t-test for every gene</h2>
+<p>We walk gene by gene. For each one, the log2 fold change is simply the difference of group means on the log scale (which is <code>log2(old / young)</code>), and the p-value comes straight from <code>t.test</code>. We pre-allocate the result vectors so the loop just fills them in.</p>
+<pre><code><span class="c"># ---- t-test per gene ----</span>
+genes  <span class="o">&lt;-</span> <span class="f">rownames</span>(logtpm)
+log2FC <span class="o">&lt;-</span> <span class="f">numeric</span>(<span class="f">length</span>(genes))
+pval   <span class="o">&lt;-</span> <span class="f">numeric</span>(<span class="f">length</span>(genes))
+
+<span class="k">for</span> (i <span class="k">in</span> <span class="f">seq_along</span>(genes)) {
+  g <span class="o">&lt;-</span> logtpm[i, ]
+  log2FC[i] <span class="o">&lt;-</span> <span class="f">mean</span>(g[is_old]) - <span class="f">mean</span>(g[is_young])
+  pval[i]   <span class="o">&lt;-</span> <span class="f">t.test</span>(g[is_old], g[is_young])<span class="o">$</span>p.value
+}
+
+res <span class="o">&lt;-</span> <span class="f">data.frame</span>(gene = genes, log2FC = log2FC, p = pval)</code></pre>
+
+<h2 id="multiple"><span class="n">7.</span>Multiple-testing correction</h2>
+<p>We just ran thousands of tests. Even with no real signal, about 5% would clear <code>p &lt; 0.05</code> by chance alone &mdash; hundreds of false positives. Benjamini&ndash;Hochberg adjusts the p-values to control the expected fraction of false discoveries, and we sort so the strongest genes rise to the top.</p>
+<pre><code>res<span class="o">$</span>padj <span class="o">&lt;-</span> <span class="f">p.adjust</span>(res<span class="o">$</span>p, method = <span class="s">"BH"</span>)
+res <span class="o">&lt;-</span> res[<span class="f">order</span>(res<span class="o">$</span>p), ]
+
+<span class="f">write.table</span>(res, <span class="s">"deg_results.tsv"</span>, sep = <span class="s">"\t"</span>, quote = <span class="k">FALSE</span>, row.names = <span class="k">FALSE</span>)</code></pre>
+<div class="tip">
+  <b>Reading the output.</b> Each row is a gene with its <code>log2FC</code> (effect size and direction), <code>p</code> (raw p-value), and <code>padj</code> (adjusted). Positive fold change means higher in old; negative means higher in young. Genes worth trusting have a small <code>padj</code> <em>and</em> a sizeable fold change &mdash; statistical and biological significance together.
+</div>
+
+<h2 id="plot"><span class="n">8.</span>Plot the top 10 genes</h2>
+<p>The most intuitive check is to look at the actual expression values behind the top hits: one boxplot per gene, young versus old, with every sample shown as a point. We build a long-format table one gene at a time, then facet.</p>
+<pre><code><span class="c"># ---- plot top 10 genes ----</span>
+top10 <span class="o">&lt;-</span> <span class="f">head</span>(res<span class="o">$</span>gene, <span class="num">10</span>)
+
+plot_df <span class="o">&lt;-</span> <span class="f">data.frame</span>()
+<span class="k">for</span> (gn <span class="k">in</span> top10) {
+  plot_df <span class="o">&lt;-</span> <span class="f">rbind</span>(plot_df,
+                   <span class="f">data.frame</span>(gene = gn,
+                              expr = logtpm[gn, ],
+                              age_group = meta<span class="o">$</span>age_group))
+}
+plot_df<span class="o">$</span>gene <span class="o">&lt;-</span> <span class="f">factor</span>(plot_df<span class="o">$</span>gene, levels = top10)
+
+<span class="f">ggplot</span>(plot_df, <span class="f">aes</span>(x = age_group, y = expr, fill = age_group)) +
+  <span class="f">geom_boxplot</span>(outlier.shape = <span class="k">NA</span>, alpha = <span class="num">0.5</span>) +
+  <span class="f">geom_jitter</span>(width = <span class="num">0.15</span>, size = <span class="num">0.6</span>, alpha = <span class="num">0.5</span>) +
+  <span class="f">facet_wrap</span>(~ gene, scales = <span class="s">"free_y"</span>, ncol = <span class="num">5</span>) +
+  <span class="f">scale_fill_manual</span>(values = <span class="f">c</span>(young = <span class="s">"steelblue"</span>, old = <span class="s">"firebrick"</span>)) +
+  <span class="f">labs</span>(title = <span class="s">"Top 10 genes: expression by age group"</span>,
+       x = <span class="k">NULL</span>, y = <span class="s">"log2(TPM + 1)"</span>) +
+  <span class="f">theme_minimal</span>(base_size = <span class="num">11</span>) +
+  <span class="f">theme</span>(legend.position = <span class="s">"none"</span>)</code></pre>
+<p>Using <code>scales = "free_y"</code> lets each panel scale to its own gene, so low-expression genes aren't flattened by a shared axis. The result is a 2&times;5 grid where the young/old shift is visible at a glance.</p>
+<div class="note">
+  <b>Running from the terminal.</b> In RStudio this plot appears in the Plots pane automatically. If you run the script with <code>Rscript</code> there is no on-screen device, so wrap the final <code>ggplot(...)</code> call in <code>ggsave("top10.png", ...)</code> to save it to a file instead.
+</div>
+
+<h2 id="volcano"><span class="n">9.</span>Volcano plot with labeled top 10</h2>
+<p>The volcano plot puts every gene on one chart: effect size on the x-axis (log2 fold change) and significance on the y-axis (<code>-log10</code> of the adjusted p-value). The genes that matter sit in the upper corners &mdash; large change <em>and</em> statistically significant. We flag those, draw the two cutoff lines, and label the ten strongest genes with <code>ggrepel</code>, which nudges the text so labels don't collide.</p>
+<pre><code><span class="k">if</span> (!<span class="f">requireNamespace</span>(<span class="s">"ggrepel"</span>, quietly = <span class="k">TRUE</span>)) <span class="f">install.packages</span>(<span class="s">"ggrepel"</span>)
+<span class="f">library</span>(ggrepel)
+
+<span class="c"># flag significant genes and mark the top 10 for labeling</span>
+res<span class="o">$</span>significant <span class="o">&lt;-</span> !<span class="f">is.na</span>(res<span class="o">$</span>padj) &amp; res<span class="o">$</span>padj <span class="o">&lt;</span> <span class="num">0.05</span> &amp; <span class="f">abs</span>(res<span class="o">$</span>log2FC) <span class="o">&gt;</span> <span class="num">1</span>
+top10 <span class="o">&lt;-</span> <span class="f">head</span>(res<span class="o">$</span>gene, <span class="num">10</span>)
+res<span class="o">$</span>label <span class="o">&lt;-</span> <span class="f">ifelse</span>(res<span class="o">$</span>gene <span class="o">%in%</span> top10, res<span class="o">$</span>gene, <span class="k">NA</span>)
+
+<span class="f">ggplot</span>(res, <span class="f">aes</span>(x = log2FC, y = -<span class="f">log10</span>(padj))) +
+  <span class="f">geom_point</span>(<span class="f">aes</span>(color = significant), alpha = <span class="num">0.5</span>, size = <span class="num">0.9</span>) +
+  <span class="f">scale_color_manual</span>(values = <span class="f">c</span>(<span class="s">"FALSE"</span> = <span class="s">"grey70"</span>, <span class="s">"TRUE"</span> = <span class="s">"firebrick"</span>),
+                     labels = <span class="f">c</span>(<span class="s">"not sig"</span>, <span class="s">"significant"</span>), name = <span class="k">NULL</span>) +
+  <span class="f">geom_vline</span>(xintercept = <span class="f">c</span>(-<span class="num">1</span>, <span class="num">1</span>), linetype = <span class="s">"dashed"</span>, color = <span class="s">"grey40"</span>) +
+  <span class="f">geom_hline</span>(yintercept = -<span class="f">log10</span>(<span class="num">0.05</span>), linetype = <span class="s">"dashed"</span>, color = <span class="s">"grey40"</span>) +
+  <span class="f">geom_text_repel</span>(<span class="f">aes</span>(label = label), size = <span class="num">3.2</span>, max.overlaps = <span class="k">Inf</span>,
+                  min.segment.length = <span class="num">0</span>, box.padding = <span class="num">0.4</span>,
+                  segment.color = <span class="s">"grey50"</span>, na.rm = <span class="k">TRUE</span>) +
+  <span class="f">labs</span>(title = <span class="s">"Volcano plot: old vs young (whole blood)"</span>,
+       subtitle = <span class="s">"top 10 genes labeled"</span>,
+       x = <span class="s">"log2 fold change (old / young)"</span>,
+       y = <span class="s">"-log10(adjusted p-value)"</span>) +
+  <span class="f">theme_minimal</span>(base_size = <span class="num">12</span>)</code></pre>
+<div class="tip">
+  <b>Why <code>ggrepel</code>.</b> Plain <code>geom_text</code> stacks labels right on top of their points, which overlap badly in a dense volcano. <code>geom_text_repel</code> pushes them apart and draws a thin connector back to each point, so all ten stay readable.
+</div>
+
+<h2 id="enrich"><span class="n">10.</span>GO enrichment with clusterProfiler</h2>
+<p>A list of significant genes is more interpretable as <em>biology</em>: are the differentially expressed genes concentrated in particular pathways or processes? Over-representation analysis (ORA) answers this by testing whether any Gene Ontology term appears among the DEGs more often than expected by chance. We use <code>clusterProfiler::enrichGO</code>, which takes gene symbols directly.</p>
+<pre><code><span class="k">if</span> (!<span class="f">requireNamespace</span>(<span class="s">"BiocManager"</span>, quietly = <span class="k">TRUE</span>)) <span class="f">install.packages</span>(<span class="s">"BiocManager"</span>)
+<span class="k">for</span> (pkg <span class="k">in</span> <span class="f">c</span>(<span class="s">"clusterProfiler"</span>, <span class="s">"org.Hs.eg.db"</span>, <span class="s">"enrichplot"</span>))
+  <span class="k">if</span> (!<span class="f">requireNamespace</span>(pkg, quietly = <span class="k">TRUE</span>)) <span class="f">BiocManager::install</span>(pkg)
+<span class="f">library</span>(clusterProfiler)
+<span class="f">library</span>(org.Hs.eg.db)
+<span class="f">library</span>(enrichplot)
+
+<span class="c"># gene set of interest: the significant DEGs</span>
+sig_genes <span class="o">&lt;-</span> res<span class="o">$</span>gene[!<span class="f">is.na</span>(res<span class="o">$</span>padj) &amp; res<span class="o">$</span>padj <span class="o">&lt;</span> <span class="num">0.05</span> &amp; <span class="f">abs</span>(res<span class="o">$</span>log2FC) <span class="o">&gt;</span> <span class="num">1</span>]
+
+<span class="c"># background/universe: every gene we actually tested (NOT the whole genome)</span>
+universe_genes <span class="o">&lt;-</span> res<span class="o">$</span>gene
+
+ego <span class="o">&lt;-</span> <span class="f">enrichGO</span>(
+  gene          = sig_genes,
+  universe      = universe_genes,
+  OrgDb         = org.Hs.eg.db,
+  keyType       = <span class="s">"SYMBOL"</span>,
+  ont           = <span class="s">"BP"</span>,            <span class="c"># Biological Process</span>
+  pAdjustMethod = <span class="s">"BH"</span>,
+  pvalueCutoff  = <span class="num">0.05</span>,
+  qvalueCutoff  = <span class="num">0.05</span>,
+  readable      = <span class="k">TRUE</span>
+)
+
+<span class="f">head</span>(<span class="f">as.data.frame</span>(ego)[, <span class="f">c</span>(<span class="s">"Description"</span>, <span class="s">"GeneRatio"</span>, <span class="s">"p.adjust"</span>, <span class="s">"Count"</span>)], <span class="num">15</span>)
+
+<span class="c"># visualize the top enriched terms</span>
+<span class="f">dotplot</span>(ego, showCategory = <span class="num">15</span>) +
+  <span class="f">labs</span>(title = <span class="s">"GO Biological Process enrichment"</span>)</code></pre>
+<div class="note">
+  <b>The universe is not optional.</b> Over-representation asks whether a term is enriched among the DEGs <em>relative to the genes that could have appeared</em>. If you omit <code>universe</code>, clusterProfiler falls back to the whole annotation as background, which inflates significance. Passing the tested genes &mdash; the ones that survived the zero-expression filter &mdash; is the honest choice.
+</div>
+<div class="tip">
+  <b>Symbols may drop.</b> Because we pass gene symbols, any that aren't current HGNC symbols (old aliases, etc.) are silently dropped during mapping, so the number of genes clusterProfiler actually uses can be smaller than <code>length(sig_genes)</code>. Switch <code>ont</code> to <code>"MF"</code>, <code>"CC"</code>, or <code>"ALL"</code> for other ontologies. For a version that uses the full ranked list instead of a hard cutoff, look at <code>gseGO</code> (GSEA).
+</div>
+
+<hr>
+
+<h2 id="full"><span class="n">11.</span>The full script</h2>
+<p>Everything above in one place.</p>
+<pre><code><span class="c">#!/usr/bin/env Rscript</span>
+<span class="c"># Young vs Old DEG -- two-sample t-test on GTEx whole blood</span>
+
+<span class="c"># ---- packages ----</span>
+<span class="k">if</span> (!<span class="f">requireNamespace</span>(<span class="s">"ggplot2"</span>, quietly = <span class="k">TRUE</span>)) <span class="f">install.packages</span>(<span class="s">"ggplot2"</span>)
+<span class="f">library</span>(ggplot2)
+
+<span class="c"># ---- load data ----</span>
+expr <span class="o">&lt;-</span> <span class="f">read.delim</span>(<span class="s">"expression_matrix.tsv"</span>, check.names = <span class="k">FALSE</span>)
+meta <span class="o">&lt;-</span> <span class="f">read.delim</span>(<span class="s">"metadata.tsv"</span>, check.names = <span class="k">FALSE</span>)
+
+<span class="f">rownames</span>(expr) <span class="o">&lt;-</span> expr<span class="o">$</span>gene_name
+expr<span class="o">$</span>gene_name <span class="o">&lt;-</span> <span class="k">NULL</span>
+expr <span class="o">&lt;-</span> <span class="f">as.matrix</span>(expr[, meta<span class="o">$</span>sample_id])
+
+meta<span class="o">$</span>age_group <span class="o">&lt;-</span> <span class="f">factor</span>(meta<span class="o">$</span>age_group, levels = <span class="f">c</span>(<span class="s">"young"</span>, <span class="s">"old"</span>))
+logtpm <span class="o">&lt;-</span> <span class="f">log2</span>(expr + <span class="num">1</span>)
+
+is_old   <span class="o">&lt;-</span> meta<span class="o">$</span>age_group <span class="o">==</span> <span class="s">"old"</span>
+is_young <span class="o">&lt;-</span> meta<span class="o">$</span>age_group <span class="o">==</span> <span class="s">"young"</span>
+
+<span class="c"># ---- t-test per gene ----</span>
+genes  <span class="o">&lt;-</span> <span class="f">rownames</span>(logtpm)
+log2FC <span class="o">&lt;-</span> <span class="f">numeric</span>(<span class="f">length</span>(genes))
+pval   <span class="o">&lt;-</span> <span class="f">numeric</span>(<span class="f">length</span>(genes))
+
+<span class="k">for</span> (i <span class="k">in</span> <span class="f">seq_along</span>(genes)) {
+  g <span class="o">&lt;-</span> logtpm[i, ]
+  log2FC[i] <span class="o">&lt;-</span> <span class="f">mean</span>(g[is_old]) - <span class="f">mean</span>(g[is_young])
+  pval[i]   <span class="o">&lt;-</span> <span class="f">t.test</span>(g[is_old], g[is_young])<span class="o">$</span>p.value
+}
+
+res <span class="o">&lt;-</span> <span class="f">data.frame</span>(gene = genes, log2FC = log2FC, p = pval)
+res<span class="o">$</span>padj <span class="o">&lt;-</span> <span class="f">p.adjust</span>(res<span class="o">$</span>p, method = <span class="s">"BH"</span>)
+res <span class="o">&lt;-</span> res[<span class="f">order</span>(res<span class="o">$</span>p), ]
+
+<span class="f">write.table</span>(res, <span class="s">"deg_results.tsv"</span>, sep = <span class="s">"\t"</span>, quote = <span class="k">FALSE</span>, row.names = <span class="k">FALSE</span>)
+
+<span class="c"># ---- plot top 10 genes ----</span>
+top10 <span class="o">&lt;-</span> <span class="f">head</span>(res<span class="o">$</span>gene, <span class="num">10</span>)
+
+plot_df <span class="o">&lt;-</span> <span class="f">data.frame</span>()
+<span class="k">for</span> (gn <span class="k">in</span> top10) {
+  plot_df <span class="o">&lt;-</span> <span class="f">rbind</span>(plot_df,
+                   <span class="f">data.frame</span>(gene = gn,
+                              expr = logtpm[gn, ],
+                              age_group = meta<span class="o">$</span>age_group))
+}
+plot_df<span class="o">$</span>gene <span class="o">&lt;-</span> <span class="f">factor</span>(plot_df<span class="o">$</span>gene, levels = top10)
+
+<span class="f">ggplot</span>(plot_df, <span class="f">aes</span>(x = age_group, y = expr, fill = age_group)) +
+  <span class="f">geom_boxplot</span>(outlier.shape = <span class="k">NA</span>, alpha = <span class="num">0.5</span>) +
+  <span class="f">geom_jitter</span>(width = <span class="num">0.15</span>, size = <span class="num">0.6</span>, alpha = <span class="num">0.5</span>) +
+  <span class="f">facet_wrap</span>(~ gene, scales = <span class="s">"free_y"</span>, ncol = <span class="num">5</span>) +
+  <span class="f">scale_fill_manual</span>(values = <span class="f">c</span>(young = <span class="s">"steelblue"</span>, old = <span class="s">"firebrick"</span>)) +
+  <span class="f">labs</span>(title = <span class="s">"Top 10 genes: expression by age group"</span>,
+       x = <span class="k">NULL</span>, y = <span class="s">"log2(TPM + 1)"</span>) +
+  <span class="f">theme_minimal</span>(base_size = <span class="num">11</span>) +
+  <span class="f">theme</span>(legend.position = <span class="s">"none"</span>)
+
+<span class="c"># ---- volcano plot with labeled top 10 ----</span>
+<span class="k">if</span> (!<span class="f">requireNamespace</span>(<span class="s">"ggrepel"</span>, quietly = <span class="k">TRUE</span>)) <span class="f">install.packages</span>(<span class="s">"ggrepel"</span>)
+<span class="f">library</span>(ggrepel)
+
+res<span class="o">$</span>significant <span class="o">&lt;-</span> !<span class="f">is.na</span>(res<span class="o">$</span>padj) &amp; res<span class="o">$</span>padj <span class="o">&lt;</span> <span class="num">0.05</span> &amp; <span class="f">abs</span>(res<span class="o">$</span>log2FC) <span class="o">&gt;</span> <span class="num">1</span>
+res<span class="o">$</span>label <span class="o">&lt;-</span> <span class="f">ifelse</span>(res<span class="o">$</span>gene <span class="o">%in%</span> top10, res<span class="o">$</span>gene, <span class="k">NA</span>)
+
+<span class="f">ggplot</span>(res, <span class="f">aes</span>(x = log2FC, y = -<span class="f">log10</span>(padj))) +
+  <span class="f">geom_point</span>(<span class="f">aes</span>(color = significant), alpha = <span class="num">0.5</span>, size = <span class="num">0.9</span>) +
+  <span class="f">scale_color_manual</span>(values = <span class="f">c</span>(<span class="s">"FALSE"</span> = <span class="s">"grey70"</span>, <span class="s">"TRUE"</span> = <span class="s">"firebrick"</span>),
+                     labels = <span class="f">c</span>(<span class="s">"not sig"</span>, <span class="s">"significant"</span>), name = <span class="k">NULL</span>) +
+  <span class="f">geom_vline</span>(xintercept = <span class="f">c</span>(-<span class="num">1</span>, <span class="num">1</span>), linetype = <span class="s">"dashed"</span>, color = <span class="s">"grey40"</span>) +
+  <span class="f">geom_hline</span>(yintercept = -<span class="f">log10</span>(<span class="num">0.05</span>), linetype = <span class="s">"dashed"</span>, color = <span class="s">"grey40"</span>) +
+  <span class="f">geom_text_repel</span>(<span class="f">aes</span>(label = label), size = <span class="num">3.2</span>, max.overlaps = <span class="k">Inf</span>,
+                  min.segment.length = <span class="num">0</span>, box.padding = <span class="num">0.4</span>,
+                  segment.color = <span class="s">"grey50"</span>, na.rm = <span class="k">TRUE</span>) +
+  <span class="f">labs</span>(title = <span class="s">"Volcano plot: old vs young (whole blood)"</span>,
+       subtitle = <span class="s">"top 10 genes labeled"</span>,
+       x = <span class="s">"log2 fold change (old / young)"</span>,
+       y = <span class="s">"-log10(adjusted p-value)"</span>) +
+  <span class="f">theme_minimal</span>(base_size = <span class="num">12</span>)
+
+<span class="c"># ---- GO enrichment (clusterProfiler) ----</span>
+<span class="k">if</span> (!<span class="f">requireNamespace</span>(<span class="s">"BiocManager"</span>, quietly = <span class="k">TRUE</span>)) <span class="f">install.packages</span>(<span class="s">"BiocManager"</span>)
+<span class="k">for</span> (pkg <span class="k">in</span> <span class="f">c</span>(<span class="s">"clusterProfiler"</span>, <span class="s">"org.Hs.eg.db"</span>, <span class="s">"enrichplot"</span>))
+  <span class="k">if</span> (!<span class="f">requireNamespace</span>(pkg, quietly = <span class="k">TRUE</span>)) <span class="f">BiocManager::install</span>(pkg)
+<span class="f">library</span>(clusterProfiler)
+<span class="f">library</span>(org.Hs.eg.db)
+<span class="f">library</span>(enrichplot)
+
+sig_genes      <span class="o">&lt;-</span> res<span class="o">$</span>gene[res<span class="o">$</span>significant]
+universe_genes <span class="o">&lt;-</span> res<span class="o">$</span>gene
+
+ego <span class="o">&lt;-</span> <span class="f">enrichGO</span>(
+  gene          = sig_genes,
+  universe      = universe_genes,
+  OrgDb         = org.Hs.eg.db,
+  keyType       = <span class="s">"SYMBOL"</span>,
+  ont           = <span class="s">"BP"</span>,
+  pAdjustMethod = <span class="s">"BH"</span>,
+  pvalueCutoff  = <span class="num">0.05</span>,
+  qvalueCutoff  = <span class="num">0.05</span>,
+  readable      = <span class="k">TRUE</span>
+)
+
+<span class="f">write.table</span>(<span class="f">as.data.frame</span>(ego), <span class="s">"go_enrichment.tsv"</span>,
+            sep = <span class="s">"\t"</span>, quote = <span class="k">FALSE</span>, row.names = <span class="k">FALSE</span>)
+
+<span class="f">dotplot</span>(ego, showCategory = <span class="num">15</span>) +
+  <span class="f">labs</span>(title = <span class="s">"GO Biological Process enrichment"</span>)</code></pre>
+
+<footer>
+  A teaching example. A t-test on log-expression makes the concept of differential expression transparent; production RNA-seq tools such as DESeq2, edgeR, and limma ask the same question but model raw counts and share information across genes so they remain reliable with only a few samples per group.
+</footer>
+
+</div>
+</body>
+</html>
