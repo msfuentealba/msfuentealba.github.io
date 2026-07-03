@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Age Acceleration</title>
+<style>
+  :root{
+    --ink:#12232e;
+    --paper:#f5f2ec;
+    --grid:#dcd6ca;
+    --pop:#607d3b;      /* olive — the regression / "expected" line */
+    --hot:#c8342b;      /* red draggable subject */
+    --hot-soft:#e88b84;
+    --muted:#6c6459;
+    --panel:#fffdf8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:2.2vmin;
+    overflow:hidden;
+  }
+  header{
+    width:100%;
+    max-width:1200px;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:1vmin;
+    margin-bottom:1.2vmin;
+    flex-wrap:wrap;
+    gap:1vmin;
+  }
+  h1{
+    font-size:clamp(22px,3.4vmin,40px);
+    font-weight:600;
+    letter-spacing:.01em;
+  }
+  header .sub{
+    font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:clamp(11px,1.5vmin,15px);
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.14em;
+  }
+  .stage{
+    width:100%;
+    max-width:1200px;
+    flex:1;
+    display:grid;
+    grid-template-columns:1fr minmax(240px,300px);
+    gap:2vmin;
+    min-height:0;
+  }
+  .plotwrap{
+    position:relative;
+    background:var(--panel);
+    border:1px solid var(--grid);
+    border-radius:4px;
+    overflow:hidden;
+  }
+  svg{display:block;width:100%;height:100%}
+  .gridline{stroke:var(--grid);stroke-width:1}
+  .axis{stroke:var(--ink);stroke-width:2}
+  .axis-label{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:15px;fill:var(--ink);font-weight:500;
+    text-transform:uppercase;letter-spacing:.1em;
+  }
+  .tick{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:12px;fill:var(--muted)}
+  .cloud{fill:#c9c2b4;opacity:.75}
+  .regline{stroke:var(--pop);stroke-width:3}
+  .reglabel{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:12.5px;fill:var(--pop);font-weight:600}
+  .resid{stroke:var(--hot);stroke-width:2.5;stroke-dasharray:2 5;stroke-linecap:round}
+  .subject{fill:var(--hot);stroke:#fff;stroke-width:2.5;cursor:grab;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+  .subject:active{cursor:grabbing}
+  .subject-halo{fill:var(--hot);opacity:.16;pointer-events:none}
+  .drop{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4;opacity:.6}
+
+  /* readout panel */
+  .panel{
+    display:flex;flex-direction:column;gap:1.6vmin;min-height:0;
+  }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--grid);
+    border-radius:4px;
+    padding:2vmin 2.2vmin;
+  }
+  .card.hero{
+    border:2px solid var(--hot);
+    background:linear-gradient(180deg,#fffdf8,#fdf3f1);
+  }
+  .card .eyebrow{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(10px,1.4vmin,13px);
+    text-transform:uppercase;letter-spacing:.14em;color:var(--muted);
+    margin-bottom:.4vmin;
+  }
+  .bignum{
+    font-size:clamp(40px,8vmin,76px);
+    font-weight:600;line-height:.95;
+    display:flex;align-items:baseline;gap:.12em;
+  }
+  .bignum .unit{font-size:.3em;color:var(--muted);font-weight:500}
+  .verdict{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(12px,1.7vmin,16px);
+    margin-top:.8vmin;font-weight:600;
+  }
+  .rowvals{display:flex;flex-direction:column;gap:1.1vmin}
+  .rowval{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:clamp(12px,1.7vmin,16px)}
+  .rowval .k{color:var(--muted);letter-spacing:.04em}
+  .rowval .v{font-weight:600;font-size:1.15em}
+  .dotk{display:inline-block;width:.7em;height:.7em;border-radius:50%;margin-right:.5em;vertical-align:middle}
+  .hint{
+    font-size:clamp(12px,1.7vmin,15px);color:var(--muted);
+    line-height:1.5;font-style:italic;
+  }
+  .hint b{color:var(--ink);font-style:normal}
+  .reset{
+    margin-top:auto;
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:13px;text-transform:uppercase;letter-spacing:.1em;
+    background:var(--ink);color:var(--paper);border:none;
+    padding:1.1vmin;border-radius:3px;cursor:pointer;width:100%;
+  }
+  .reset:hover{background:#24404f}
+  @media (max-width:820px){
+    .stage{grid-template-columns:1fr;grid-template-rows:1fr auto}
+    body{overflow:auto}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Age Acceleration</h1>
+    <span class="sub">Biological age vs. chronological age · drag the red subject</span>
+  </header>
+
+  <div class="stage">
+    <div class="plotwrap">
+      <svg id="plot" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="Scatter of biological versus chronological age with a draggable subject">
+        <!-- built by JS -->
+      </svg>
+    </div>
+
+    <aside class="panel">
+      <div class="card hero">
+        <div class="eyebrow">Age acceleration</div>
+        <div class="bignum"><span id="accel">+0.0</span><span class="unit">yrs</span></div>
+        <div class="verdict" id="verdict">On the line</div>
+      </div>
+
+      <div class="card">
+        <div class="rowvals">
+          <div class="rowval">
+            <span class="k"><span class="dotk" style="background:var(--hot)"></span>Chronological age</span>
+            <span class="v" id="chrono">50</span>
+          </div>
+          <div class="rowval">
+            <span class="k"><span class="dotk" style="background:var(--hot)"></span>Biological age</span>
+            <span class="v" id="bio">50</span>
+          </div>
+          <div class="rowval">
+            <span class="k"><span class="dotk" style="background:var(--pop)"></span>Expected (line)</span>
+            <span class="v" id="expected">50</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="hint">The <b>olive line</b> is the population trend — where biological age is <i>expected</i> to fall for a given chronological age. The dashed drop is the <b>residual</b>: how far this person sits above or below it. That residual <b>is</b> the age acceleration.</p>
+      </div>
+
+      <button class="reset" id="reset">Reset subject</button>
+    </aside>
+  </div>
+
+<script>
+(function(){
+  const svg = document.getElementById('plot');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // ---- plot geometry (in viewBox units) ----
+  const M = {l:78, r:30, t:30, b:70};
+  const W = 800, H = 600;
+  const x0 = M.l, x1 = W - M.r;
+  const y0 = H - M.b, y1 = M.t;
+
+  // data domain
+  const AGE_MIN = 20, AGE_MAX = 80;      // chronological (x)
+  const BIO_MIN = 20, BIO_MAX = 80;      // biological (y)
+
+  const sx = a => x0 + (a-AGE_MIN)/(AGE_MAX-AGE_MIN)*(x1-x0);
+  const sy = b => y0 + (b-BIO_MIN)/(BIO_MAX-BIO_MIN)*(y1-y0);
+  const inv_x = px => AGE_MIN + (px-x0)/(x1-x0)*(AGE_MAX-AGE_MIN);
+  const inv_y = py => BIO_MIN + (py-y0)/(y1-y0)*(BIO_MAX-BIO_MIN);
+
+  // regression line = identity (bio expected == chrono). Draw across domain.
+  const expectedBio = a => a;
+
+  function el(tag, attrs){
+    const e = document.createElementNS(NS, tag);
+    for(const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // ---- gridlines + ticks ----
+  const ticks = [20,30,40,50,60,70,80];
+  ticks.forEach(t=>{
+    svg.appendChild(el('line',{class:'gridline',x1:sx(t),y1:y1,x2:sx(t),y2:y0}));
+    svg.appendChild(el('line',{class:'gridline',x1:x0,y1:sy(t),x2:x1,y2:sy(t)}));
+    const tx = el('text',{class:'tick','text-anchor':'middle',x:sx(t),y:y0+22}); tx.textContent=t; svg.appendChild(tx);
+    const ty = el('text',{class:'tick','text-anchor':'end',x:x0-10,y:sy(t)+4}); ty.textContent=t; svg.appendChild(ty);
+  });
+
+  // ---- axes ----
+  svg.appendChild(el('line',{class:'axis',x1:x0,y1:y0,x2:x1,y2:y0}));
+  svg.appendChild(el('line',{class:'axis',x1:x0,y1:y0,x2:x0,y2:y1}));
+  const xl = el('text',{class:'axis-label','text-anchor':'middle',x:(x0+x1)/2,y:H-22});
+  xl.textContent='Chronological age'; svg.appendChild(xl);
+  const yl = el('text',{class:'axis-label','text-anchor':'middle',x:22,y:(y0+y1)/2,
+    transform:`rotate(-90 22 ${(y0+y1)/2})`});
+  yl.textContent='Biological age'; svg.appendChild(yl);
+
+  // ---- theoretical cloud: 100 people scattered around the line ----
+  // deterministic pseudo-random so the picture is stable each load
+  let seed = 42;
+  const rand = ()=>{ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed/0x7fffffff; };
+  const gauss = ()=>{ // Box-Muller
+    let u=0,v=0; while(u===0)u=rand(); while(v===0)v=rand();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  };
+  for(let i=0;i<100;i++){
+    const a = AGE_MIN + rand()*(AGE_MAX-AGE_MIN);
+    const b = expectedBio(a) + gauss()*5.5;   // ~5.5yr residual spread
+    const bb = Math.max(BIO_MIN, Math.min(BIO_MAX, b));
+    svg.appendChild(el('circle',{class:'cloud',cx:sx(a),cy:sy(bb),r:6}));
+  }
+
+  // ---- regression / expected line (draw on top of cloud) ----
+  svg.appendChild(el('line',{class:'regline',x1:sx(AGE_MIN),y1:sy(expectedBio(AGE_MIN)),
+    x2:sx(AGE_MAX),y2:sy(expectedBio(AGE_MAX))}));
+  const rlab = el('text',{class:'reglabel','text-anchor':'start',
+    x:sx(AGE_MAX)-150,y:sy(expectedBio(AGE_MAX))-10});
+  rlab.textContent='expected trend'; svg.appendChild(rlab);
+
+  // ---- residual drop + subject (built last = on top) ----
+  const residual = el('line',{class:'resid'});
+  svg.appendChild(residual);
+  const dropX = el('line',{class:'drop'});   // faint guide down to x-axis
+  svg.appendChild(dropX);
+  const halo = el('circle',{class:'subject-halo',r:22});
+  svg.appendChild(halo);
+  const subject = el('circle',{class:'subject',r:11,tabindex:0,role:'slider',
+    'aria-label':'Subject biological age'});
+  svg.appendChild(subject);
+
+  // subject state (data coords)
+  let subjAge = 50;
+  let subjBio = 50;
+
+  // ---- readout elements ----
+  const elAccel = document.getElementById('accel');
+  const elVerdict = document.getElementById('verdict');
+  const elChrono = document.getElementById('chrono');
+  const elBio = document.getElementById('bio');
+  const elExpected = document.getElementById('expected');
+
+  function render(){
+    const px = sx(subjAge), py = sy(subjBio);
+    subject.setAttribute('cx',px); subject.setAttribute('cy',py);
+    halo.setAttribute('cx',px); halo.setAttribute('cy',py);
+
+    const expY = expectedBio(subjAge);
+    const pyExp = sy(expY);
+    residual.setAttribute('x1',px); residual.setAttribute('y1',pyExp);
+    residual.setAttribute('x2',px); residual.setAttribute('y2',py);
+    dropX.setAttribute('x1',px); dropX.setAttribute('y1',py);
+    dropX.setAttribute('x2',px); dropX.setAttribute('y2',y0);
+
+    const accel = subjBio - expY;
+    const sign = accel>=0 ? '+' : '−';
+    elAccel.textContent = sign + Math.abs(accel).toFixed(1);
+    elAccel.style.color = accel>=0 ? 'var(--hot)' : 'var(--pop)';
+
+    elChrono.textContent = Math.round(subjAge);
+    elBio.textContent = Math.round(subjBio);
+    elExpected.textContent = Math.round(expY);
+
+    if(Math.abs(accel) < 0.5){
+      elVerdict.textContent = 'Aging on schedule';
+      elVerdict.style.color = 'var(--muted)';
+    } else if(accel > 0){
+      elVerdict.textContent = 'Biologically older ▲';
+      elVerdict.style.color = 'var(--hot)';
+    } else {
+      elVerdict.textContent = 'Biologically younger ▼';
+      elVerdict.style.color = 'var(--pop)';
+    }
+  }
+  render();
+
+  // ---- dragging ----
+  function clientToData(evt){
+    const pt = svg.createSVGPoint();
+    const src = evt.touches ? evt.touches[0] : evt;
+    pt.x = src.clientX; pt.y = src.clientY;
+    const m = svg.getScreenCTM().inverse();
+    const loc = pt.matrixTransform(m);
+    return {
+      a: Math.max(AGE_MIN, Math.min(AGE_MAX, inv_x(loc.x))),
+      b: Math.max(BIO_MIN, Math.min(BIO_MAX, inv_y(loc.y)))
+    };
+  }
+  let dragging = false;
+  function down(e){ dragging=true; move(e); e.preventDefault(); }
+  function move(e){
+    if(!dragging) return;
+    const d = clientToData(e);
+    subjAge = d.a; subjBio = d.b;
+    render();
+    e.preventDefault();
+  }
+  function up(){ dragging=false; }
+
+  subject.addEventListener('mousedown',down);
+  svg.addEventListener('mousemove',move);
+  window.addEventListener('mouseup',up);
+  subject.addEventListener('touchstart',down,{passive:false});
+  svg.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('touchend',up);
+
+  // let clicking anywhere on the plot grab the subject to that spot
+  svg.addEventListener('mousedown',e=>{ if(e.target!==subject){ dragging=true; move(e);} });
+
+  // keyboard for accessibility
+  subject.addEventListener('keydown',e=>{
+    const step = e.shiftKey?5:1;
+    if(e.key==='ArrowUp'){subjBio=Math.min(BIO_MAX,subjBio+step);render();e.preventDefault();}
+    if(e.key==='ArrowDown'){subjBio=Math.max(BIO_MIN,subjBio-step);render();e.preventDefault();}
+    if(e.key==='ArrowRight'){subjAge=Math.min(AGE_MAX,subjAge+step);render();e.preventDefault();}
+    if(e.key==='ArrowLeft'){subjAge=Math.max(AGE_MIN,subjAge-step);render();e.preventDefault();}
+  });
+
+  document.getElementById('reset').addEventListener('click',()=>{
+    subjAge=50; subjBio=50; render();
+  });
+})();
+</script>
+</body>
+</html>
