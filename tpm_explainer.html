@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TPM — Transcripts Per Million</title>
+<style>
+  :root{
+    --ink:#12232e;
+    --paper:#f5f2ec;
+    --grid:#dcd6ca;
+    --panel:#fffdf8;
+    --muted:#6c6459;
+    --geneA:#2d6a8e;   /* teal */
+    --geneB:#c8342b;   /* red */
+    --geneC:#b58b21;   /* ochre */
+    --pop:#607d3b;     /* olive accent */
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--paper);color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    display:flex;flex-direction:column;align-items:center;
+    padding:2.2vmin;overflow:hidden;
+  }
+  header{
+    width:100%;max-width:1240px;display:flex;align-items:baseline;
+    justify-content:space-between;border-bottom:2px solid var(--ink);
+    padding-bottom:1vmin;margin-bottom:1.4vmin;flex-wrap:wrap;gap:1vmin;
+  }
+  h1{font-size:clamp(22px,3.4vmin,40px);font-weight:600}
+  header .sub{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(11px,1.5vmin,15px);color:var(--muted);
+    text-transform:uppercase;letter-spacing:.14em;
+  }
+  .stage{
+    width:100%;max-width:1240px;flex:1;display:grid;
+    grid-template-columns:minmax(260px,320px) 1fr;gap:2.4vmin;min-height:0;
+  }
+
+  /* ---- controls ---- */
+  .controls{display:flex;flex-direction:column;gap:1.6vmin;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--grid);border-radius:4px;padding:1.8vmin 2vmin}
+  .card .eyebrow{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(10px,1.4vmin,13px);text-transform:uppercase;
+    letter-spacing:.14em;color:var(--muted);margin-bottom:1.2vmin;
+  }
+  .slider-row{margin-bottom:1.6vmin}
+  .slider-row:last-child{margin-bottom:0}
+  .slider-row .lab{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.5vmin}
+  .slider-row .lab .name{font-size:clamp(13px,1.8vmin,17px)}
+  .slider-row .lab .val{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-weight:600;font-size:clamp(13px,1.9vmin,18px);
+  }
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:6px;
+    border-radius:3px;background:var(--grid);outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;
+    background:var(--ink);border:3px solid var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:20px;height:20px;border-radius:50%;background:var(--ink);
+    border:3px solid var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  .depth-thumb::-webkit-slider-thumb{background:var(--pop)}
+  .depth-thumb::-moz-range-thumb{background:var(--pop)}
+
+  .sumcard{border:2px solid var(--pop);background:linear-gradient(180deg,#fffdf8,#f4f6ee)}
+  .sumcard .bignum{
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(26px,4.6vmin,46px);font-weight:600;line-height:1;
+    display:flex;align-items:baseline;gap:.2em;
+  }
+  .sumcard .locked{
+    font-size:clamp(11px,1.5vmin,14px);color:var(--pop);font-weight:600;
+    font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    margin-top:.6vmin;text-transform:uppercase;letter-spacing:.1em;
+  }
+  .hint{font-size:clamp(12px,1.7vmin,15px);color:var(--muted);line-height:1.5;font-style:italic}
+  .hint b{color:var(--ink);font-style:normal}
+  .reset{
+    margin-top:auto;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:13px;text-transform:uppercase;letter-spacing:.1em;
+    background:var(--ink);color:var(--paper);border:none;padding:1.1vmin;
+    border-radius:3px;cursor:pointer;width:100%;
+  }
+  .reset:hover{background:#24404f}
+
+  /* ---- pipeline ---- */
+  .pipeline{background:var(--panel);border:1px solid var(--grid);border-radius:4px;
+    padding:2.2vmin;display:flex;flex-direction:column;min-height:0}
+  .steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.6vmin;flex:1;min-height:0}
+  .step{display:flex;flex-direction:column;min-height:0}
+  .step-h{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(11px,1.5vmin,14px);text-transform:uppercase;letter-spacing:.1em;
+    color:var(--ink);font-weight:600;margin-bottom:.4vmin}
+  .step-sub{font-size:clamp(11px,1.5vmin,13.5px);color:var(--muted);
+    font-style:italic;margin-bottom:1.2vmin;min-height:2.6em;line-height:1.35}
+  .bars{flex:1;display:flex;flex-direction:column;gap:1.1vmin;justify-content:center}
+  .bar-row{display:flex;flex-direction:column;gap:.35vmin}
+  .bar-row .glab{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(10px,1.4vmin,12.5px);display:flex;justify-content:space-between;align-items:baseline}
+  .bar-row .glab .gval{color:var(--muted);font-size:.92em}
+  .bar-track{height:clamp(16px,3vmin,26px);background:#eee7d8;border-radius:2px;overflow:hidden;position:relative}
+  .bar-fill{height:100%;border-radius:2px;transition:width .18s ease;min-width:1px}
+  .fA{background:var(--geneA)} .fB{background:var(--geneB)} .fC{background:var(--geneC)}
+  .arrow{align-self:center;color:var(--muted);font-size:clamp(16px,2.4vmin,22px);
+    display:flex;align-items:center;justify-content:center}
+  .op{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    font-size:clamp(10px,1.4vmin,12.5px);color:var(--pop);text-align:center;
+    margin-top:1vmin;font-weight:600}
+  @media (max-width:900px){
+    .stage{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+    body{overflow:auto}
+    .step-sub{min-height:0}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Transcripts Per Million</h1>
+    <span class="sub">Same read counts · length first, then depth</span>
+  </header>
+
+  <div class="stage">
+    <div class="controls">
+      <div class="card">
+        <div class="eyebrow">Gene lengths (bp)</div>
+        <div class="slider-row">
+          <div class="lab"><span class="name" style="color:var(--geneA)">■ Gene A</span><span class="val" id="lenAval">2000</span></div>
+          <input type="range" id="lenA" min="500" max="5000" step="100" value="2000">
+        </div>
+        <div class="slider-row">
+          <div class="lab"><span class="name" style="color:var(--geneB)">■ Gene B</span><span class="val" id="lenBval">500</span></div>
+          <input type="range" id="lenB" min="500" max="5000" step="100" value="500">
+        </div>
+        <div class="slider-row">
+          <div class="lab"><span class="name" style="color:var(--geneC)">■ Gene C</span><span class="val" id="lenCval">1000</span></div>
+          <input type="range" id="lenC" min="500" max="5000" step="100" value="1000">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="eyebrow">Sequencing depth</div>
+        <div class="slider-row" style="margin-bottom:0">
+          <div class="lab"><span class="name" style="color:var(--pop)">Total reads (all genes ×)</span><span class="val" id="depthval">1.0×</span></div>
+          <input type="range" id="depth" class="depth-thumb" min="0.25" max="4" step="0.05" value="1">
+        </div>
+      </div>
+
+      <div class="card sumcard">
+        <div class="eyebrow" style="color:var(--pop)">Whole transcriptome (your 3 genes are inside this)</div>
+        <div class="slider-row">
+          <div class="lab"><span class="name">Total genes</span><span class="val" id="bgnval">17,000</span></div>
+          <input type="range" id="bgn" min="3" max="25000" step="100" value="17000">
+        </div>
+        <div class="slider-row">
+          <div class="lab"><span class="name">Avg A per gene</span><span class="val" id="bgaval">20,000</span></div>
+          <input type="range" id="bga" min="1000" max="40000" step="1000" value="20000">
+        </div>
+        <div class="slider-row" style="margin-bottom:0">
+          <div class="lab"><span class="name" style="color:var(--pop)">Σ(A) denominator</span><span class="val" id="denomval">—</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="hint">The two sliders set the <b>whole pool</b> — total genes × average A gives Σ(A), the denominator. Your 3 genes are already counted inside it. Drag <b>total genes</b> toward 3 and watch their TPMs balloon — with nothing else in the pool, they'd own the whole million. Same gene, same reads: its TPM depends on <b>what else is expressed</b>.</p>
+      </div>
+
+      <button class="reset" id="reset">Reset to worked example</button>
+    </div>
+
+    <div class="pipeline">
+      <div class="steps">
+        <div class="step">
+          <div class="step-h">1 · Raw counts</div>
+          <div class="step-sub">Reads mapped to each gene. Confounds length &amp; depth.</div>
+          <div class="bars" id="barsRaw"></div>
+          <div class="op" id="opRaw">start here</div>
+        </div>
+        <div class="step">
+          <div class="step-h">2 · A = ×10³ ÷ length</div>
+          <div class="step-sub">Reads per kilobase. Removes the length advantage.</div>
+          <div class="bars" id="barsRate"></div>
+          <div class="op">A = count × 10³ ÷ length(bp)</div>
+        </div>
+        <div class="step">
+          <div class="step-h">3 · ÷ total × 10⁶</div>
+          <div class="step-sub">Share of the whole pool (these 3 + 17,000 more). Removes depth.</div>
+          <div class="bars" id="barsTpm"></div>
+          <div class="op">tpm = A ÷ Σ(A)ₐₗₗ × 10⁶</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // baseline "worked example": equal raw counts at depth 1×
+  const BASE_COUNT = 1000;
+  const genes = [
+    {id:'A', cls:'fA', col:'var(--geneA)'},
+    {id:'B', cls:'fB', col:'var(--geneB)'},
+    {id:'C', cls:'fC', col:'var(--geneC)'}
+  ];
+
+  const $ = id => document.getElementById(id);
+  const lenA=$('lenA'), lenB=$('lenB'), lenC=$('lenC'), depth=$('depth');
+  const bgn=$('bgn'), bga=$('bga');
+
+  const fmt = n => Math.round(n).toLocaleString('en-US');
+
+  function build(container){
+    container.innerHTML='';
+    return genes.map(g=>{
+      const row=document.createElement('div'); row.className='bar-row';
+      const lab=document.createElement('div'); lab.className='glab';
+      lab.innerHTML=`<span style="color:${g.col};font-weight:600">Gene ${g.id}</span><span class="gval"></span>`;
+      const track=document.createElement('div'); track.className='bar-track';
+      const fill=document.createElement('div'); fill.className='bar-fill '+g.cls;
+      track.appendChild(fill); row.appendChild(lab); row.appendChild(track);
+      container.appendChild(row);
+      return {fill, val:lab.querySelector('.gval')};
+    });
+  }
+  const rawB = build($('barsRaw'));
+  const rateB = build($('barsRate'));
+  const tpmB = build($('barsTpm'));
+
+  function render(){
+    const lens=[+lenA.value,+lenB.value,+lenC.value];
+    const d=+depth.value;
+    const nGenes=+bgn.value, avgA=+bga.value;
+    $('lenAval').textContent=fmt(lens[0]);
+    $('lenBval').textContent=fmt(lens[1]);
+    $('lenCval').textContent=fmt(lens[2]);
+    $('depthval').textContent=d.toFixed(2)+'×';
+    $('bgnval').textContent=fmt(nGenes);
+    $('bgaval').textContent=fmt(avgA);
+
+    // raw counts scale with depth (all genes equally)
+    const counts = lens.map(()=>BASE_COUNT*d);
+    // step 2: A = count * 10^3 / length(bp)
+    const rates = counts.map((c,i)=> c*1e3/lens[i]);
+    // Σ(A) is the WHOLE transcriptome: total genes × average A.
+    // The 3 visible genes are already counted inside this total.
+    // It scales with depth just like the per-gene A values.
+    const rateSum = nGenes*avgA*d;
+    // step 3: tpm = A / Σ(A) * 1e6
+    const tpm = rates.map(r=> r/rateSum*1e6);
+
+    $('denomval').textContent = (rateSum).toExponential(2).replace('e+','e');
+
+    const maxCount=Math.max(...counts);
+    const maxRate=Math.max(...rates);
+    const maxTpm=Math.max(...tpm);
+
+    counts.forEach((c,i)=>{
+      rawB[i].fill.style.width=(c/maxCount*100)+'%';
+      rawB[i].val.textContent=fmt(c);
+    });
+    rates.forEach((r,i)=>{
+      rateB[i].fill.style.width=(r/maxRate*100)+'%';
+      rateB[i].val.textContent=fmt(r);
+    });
+    tpm.forEach((t,i)=>{
+      tpmB[i].fill.style.width=(t/maxTpm*100)+'%';
+      tpmB[i].val.textContent = t>=1000 ? fmt(t) : t.toFixed(2);
+    });
+
+    $('opRaw').textContent = `each = ${fmt(counts[0])} reads`;
+  }
+
+  [lenA,lenB,lenC,depth,bgn,bga].forEach(s=>s.addEventListener('input',render));
+  $('reset').addEventListener('click',()=>{
+    lenA.value=2000; lenB.value=500; lenC.value=1000; depth.value=1;
+    bgn.value=17000; bga.value=20000; render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
