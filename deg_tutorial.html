@@ -136,7 +136,7 @@ res <span class="o">&lt;-</span> <span class="f">data.frame</span>(gene = genes,
 
 <h2 id="multiple"><span class="n">7.</span>Multiple-testing correction</h2>
 <p>We just ran thousands of tests. Even with no real signal, about 5% would clear <code>p &lt; 0.05</code> by chance alone &mdash; hundreds of false positives. Benjamini&ndash;Hochberg adjusts the p-values to control the expected fraction of false discoveries, and we sort so the strongest genes rise to the top.</p>
-<pre><code>res<span class="o">$</span>padj <span class="o">&lt;-</span> <span class="f">p.adjust</span>(res<span class="o">$</span>p, method = <span class="s">"BH"</span>)
+<pre><code>res<span class="o">$</span>padj <span class="o">&lt;-</span> <span class="f">p.adjust</span>(res<span class="o">$</span>p, method = <span class="s">"bonferroni"</span>)
 res <span class="o">&lt;-</span> res[<span class="f">order</span>(res<span class="o">$</span>p), ]
 
 <span class="f">write.table</span>(res, <span class="s">"deg_results.tsv"</span>, sep = <span class="s">"\t"</span>, quote = <span class="k">FALSE</span>, row.names = <span class="k">FALSE</span>)</code></pre>
